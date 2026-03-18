@@ -1,18 +1,20 @@
 """
 auth.py — Login + OTP system with premium dark terminal UI.
-OTP is sent via Resend API from a randomised sender address.
-Streamlit Cloud compatible (reads from st.secrets).
+OTP is sent via Resend API from a randomised sender address
+to ALL configured recipients simultaneously.
 
 Resend setup (free — 3,000 emails/month):
   1. Sign up at https://resend.com
-  2. Verify your domain  OR  use Resend's shared domain for testing:
-       onboarding@resend.dev  (works without domain verification, sends to
-       the address you signed up with only — fine for personal use)
-  3. Create an API key at https://resend.com/api-keys
-  4. Add to st.secrets:
+  2. Create an API key at https://resend.com/api-keys
+  3. Add to st.secrets:
+
        [resend]
        API_KEY = "re_xxxxxxxxxxxx"
-       FROM_DOMAIN = "yourdomain.com"   # leave blank to use resend.dev shared domain
+       FROM_DOMAIN = "yourdomain.com"   # leave blank to use resend.dev
+
+  Multiple recipients — use a comma-separated list:
+       [email]
+       OTP_RECIPIENTS = "you@gmail.com, backup@gmail.com, phone@txt.att.net"
 """
 import random, string, time, os
 import requests
@@ -20,26 +22,21 @@ import streamlit as st
 
 OTP_EXPIRY = 300  # 5 minutes
 
-# ── Pool of realistic-looking sender identities ───────────────────────────────
+# ── Sender identity pools ─────────────────────────────────────────────────────
 _SENDER_NAMES = [
-    "Market Sentinel",
-    "Quant Relay",
-    "Signal Dispatch",
-    "Alpha Notify",
-    "Trade Watcher",
-    "Portfolio Guard",
-    "NSE Monitor",
-    "Index Relay",
-    "Equity Pulse",
+    "Market Sentinel", "Quant Relay",    "Signal Dispatch",
+    "Alpha Notify",    "Trade Watcher",  "Portfolio Guard",
+    "NSE Monitor",     "Index Relay",    "Equity Pulse",
     "Risk Beacon",
 ]
-
 _SENDER_PREFIXES = [
     "noreply", "alerts", "notify", "dispatch", "ping",
-    "signal", "secure", "auth", "verify", "access",
-    "system", "ops", "bot", "svc", "auto",
+    "signal",  "secure", "auth",   "verify",   "access",
+    "system",  "ops",    "bot",    "svc",       "auto",
 ]
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _cfg(section: str, key: str, fallback: str = "") -> str:
     """Read from st.secrets first, then environment, then fallback."""
@@ -49,23 +46,47 @@ def _cfg(section: str, key: str, fallback: str = "") -> str:
         return os.getenv(f"{section.upper()}_{key.upper()}", fallback)
 
 
-def _random_sender(domain: str) -> tuple[str, str]:
+def _parse_recipients(raw: str) -> list:
     """
-    Return (display_name, email) with a randomised identity each call.
-    If domain is blank, uses Resend's shared testing domain.
+    Parse one or more email addresses from a comma-separated string.
+    Supports any of:
+        "a@x.com"
+        "a@x.com, b@y.com"
+        "a@x.com,b@y.com,c@z.com"
+    Returns a deduplicated, ordered list.
     """
+    parts = [e.strip() for e in raw.split(",") if e.strip()]
+    seen, unique = set(), []
+    for p in parts:
+        if p.lower() not in seen:
+            seen.add(p.lower())
+            unique.append(p)
+    return unique
+
+
+def _mask_email(email: str) -> str:
+    """'jayank@gmail.com' → 'j*****k@gmail.com'"""
+    try:
+        local, domain = email.split("@", 1)
+        if len(local) <= 2:
+            masked = local[0] + "*"
+        else:
+            masked = local[0] + "*" * (len(local) - 2) + local[-1]
+        return f"{masked}@{domain}"
+    except Exception:
+        return email
+
+
+def _random_sender(domain: str):
+    """Return (display_name, from_email) with a fresh random identity."""
     name   = random.choice(_SENDER_NAMES)
     prefix = random.choice(_SENDER_PREFIXES)
-    # Add a short random suffix to the prefix so every OTP looks different
     suffix = "".join(random.choices(string.digits, k=4))
-
     if domain:
         email = f"{prefix}-{suffix}@{domain}"
     else:
-        # Resend shared domain — no domain verification needed
         email = "onboarding@resend.dev"
-        name  = "Trading Terminal"   # shared domain can't spoof names
-
+        name  = "Trading Terminal"
     return name, email
 
 
@@ -80,19 +101,26 @@ def verify_password(plain: str) -> bool:
         return False
 
 
+# ── Core OTP sender ────────────────────────────────────────────────────────────
+
 def send_otp(otp: str) -> bool:
     """
-    Send OTP via Resend API.
-    Falls back to console print in dev mode (no API key configured).
+    Send OTP via Resend API to ALL configured recipients in one API call.
+    Resend's 'to' field is a list — all addresses receive the same email.
+    Falls back to console print when no API key is set (local dev).
     """
-    api_key   = _cfg("resend", "API_KEY", "")
-    domain    = _cfg("resend", "FROM_DOMAIN", "").strip()
-    recipient = _cfg("email",  "OTP_RECIPIENT", "jayankgajjala@gmail.com")
+    api_key = _cfg("resend", "API_KEY", "")
+    domain  = _cfg("resend", "FROM_DOMAIN", "").strip()
 
-    # ── Dev / demo mode ────────────────────────────────────────────────────────
+    # Support both OTP_RECIPIENTS (new) and OTP_RECIPIENT (legacy single)
+    raw = _cfg("email", "OTP_RECIPIENTS", "") or \
+          _cfg("email", "OTP_RECIPIENT",  "jayankgajjala@gmail.com")
+    recipients = _parse_recipients(raw)
+
+    # ── Dev / demo mode ──────────────────────────────────────────────────────
     if not api_key:
-        print(f"\n[DEV MODE — no Resend key] OTP for {recipient}: {otp}\n")
-        return True   # silently succeed so UI flow works locally
+        print(f"\n[DEV MODE — no Resend key]  OTP: {otp}  →  {recipients}\n")
+        return True
 
     sender_name, sender_email = _random_sender(domain)
 
@@ -107,12 +135,10 @@ def send_otp(otp: str) -> bool:
              style="background:#0A0F1C;border:1px solid #141D2E;border-radius:14px;
                     overflow:hidden;max-width:380px">
 
-        <!-- Top accent line -->
         <tr><td height="2"
              style="background:linear-gradient(90deg,transparent,#00D4FF66,transparent)">
         </td></tr>
 
-        <!-- Header -->
         <tr><td style="padding:28px 32px 0">
           <div style="font-size:11px;color:#00D4FF;letter-spacing:0.18em;
                       text-transform:uppercase;margin-bottom:6px">
@@ -124,12 +150,10 @@ def send_otp(otp: str) -> bool:
           </div>
         </td></tr>
 
-        <!-- Divider -->
         <tr><td style="padding:18px 32px 0">
           <div style="height:1px;background:#141D2E"></div>
         </td></tr>
 
-        <!-- OTP block -->
         <tr><td style="padding:24px 32px">
           <div style="font-size:11px;color:#2A3D58;letter-spacing:0.1em;
                       text-transform:uppercase;margin-bottom:14px">
@@ -144,7 +168,6 @@ def send_otp(otp: str) -> bool:
           </div>
         </td></tr>
 
-        <!-- Meta -->
         <tr><td style="padding:0 32px 28px">
           <div style="font-size:11px;color:#2A3D58;line-height:1.7">
             Valid for <span style="color:#4A6080">5 minutes</span>
@@ -153,7 +176,6 @@ def send_otp(otp: str) -> bool:
           </div>
         </td></tr>
 
-        <!-- Footer -->
         <tr><td style="padding:14px 32px;background:#080D18;border-top:1px solid #0D1525">
           <div style="font-size:10px;color:#1A2D40;letter-spacing:0.05em">
             If you did not request this, ignore this email.
@@ -168,13 +190,6 @@ def send_otp(otp: str) -> bool:
 </html>
 """
 
-    payload = {
-        "from":    f"{sender_name} <{sender_email}>",
-        "to":      [recipient],
-        "subject": f"Your OTP: {otp}  —  Trading Terminal",
-        "html":    html_body,
-    }
-
     try:
         resp = requests.post(
             "https://api.resend.com/emails",
@@ -182,7 +197,12 @@ def send_otp(otp: str) -> bool:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type":  "application/json",
             },
-            json=payload,
+            json={
+                "from":    f"{sender_name} <{sender_email}>",
+                "to":      recipients,          # ← list of all recipients
+                "subject": f"Your OTP: {otp}  —  Trading Terminal",
+                "html":    html_body,
+            },
             timeout=10,
         )
         if resp.status_code in (200, 201):
@@ -195,6 +215,8 @@ def send_otp(otp: str) -> bool:
         st.error(f"Network error sending OTP: {e}")
         return False
 
+
+# ── Login page UI ──────────────────────────────────────────────────────────────
 
 def render_login_page():
     st.markdown("""
@@ -209,7 +231,6 @@ def render_login_page():
     [data-testid="collapsedControl"] { display: none !important; }
     .main .block-container { padding: 0 !important; }
 
-    /* Grid background */
     body::before {
         content: '';
         position: fixed; inset: 0;
@@ -220,8 +241,6 @@ def render_login_page():
         pointer-events: none;
         z-index: 0;
     }
-
-    /* Center wrapper */
     .login-wrap {
         min-height: 100vh;
         display: flex;
@@ -276,24 +295,7 @@ def render_login_page():
         text-transform: uppercase;
         margin-bottom: 32px;
     }
-    .login-divider {
-        height: 1px;
-        background: #141D2E;
-        margin: 24px 0;
-    }
-    .form-group { margin-bottom: 18px; }
-    .form-label {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 10px;
-        font-weight: 500;
-        color: #2A3D58;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 7px;
-        display: block;
-    }
-
-    /* Override Streamlit form elements */
+    .login-divider { height: 1px; background: #141D2E; margin: 24px 0; }
     .stTextInput > div > div > input {
         background: #060A12 !important;
         border: 1px solid #1A2540 !important;
@@ -363,13 +365,12 @@ def render_login_page():
     </div>
     """, unsafe_allow_html=True)
 
-    # Use columns to center the form
     _, col, _ = st.columns([1, 2, 1])
     with col:
         if not st.session_state.get("otp_sent"):
             with st.form("login_form", clear_on_submit=False):
-                username = st.text_input("Username")
-                password = st.text_input("Password", type="password")
+                username  = st.text_input("Username")
+                password  = st.text_input("Password", type="password")
                 submitted = st.form_submit_button("Send OTP →")
                 if submitted:
                     auth_user = _cfg("auth", "USERNAME", "Jayank8294")
@@ -377,24 +378,38 @@ def render_login_page():
                         otp = "".join(random.choices(string.digits, k=6))
                         if send_otp(otp):
                             st.session_state.update({
-                                "otp_value": otp,
+                                "otp_value":     otp,
                                 "otp_timestamp": time.time(),
-                                "otp_sent": True,
+                                "otp_sent":      True,
                             })
                             st.rerun()
                         else:
-                            st.error("Could not send OTP. Check email config in secrets.")
+                            st.error("Could not send OTP. Check Resend config in secrets.")
                     else:
                         st.error("Invalid credentials.")
         else:
-            st.markdown("""
+            # ── Show masked recipient list ──────────────────────────────────
+            raw = _cfg("email", "OTP_RECIPIENTS", "") or \
+                  _cfg("email", "OTP_RECIPIENT",  "jayankgajjala@gmail.com")
+            recipients = _parse_recipients(raw)
+            masked_list = " &nbsp;·&nbsp; ".join(_mask_email(r) for r in recipients)
+            count_label = (
+                f"{len(recipients)} recipients"
+                if len(recipients) > 1
+                else "your inbox"
+            )
+
+            st.markdown(f"""
             <div style="background:#0A1828;border:1px solid #1A3A55;border-radius:8px;
-                        padding:14px 18px;margin-bottom:16px;font-family:'IBM Plex Mono',monospace">
-              <div style="color:#00D4FF;font-size:11px;letter-spacing:0.05em">OTP SENT</div>
-              <div style="color:#4A6080;font-size:12px;margin-top:4px">
-                Check jayankgajjala@gmail.com
+                        padding:16px 18px;margin-bottom:16px;font-family:'IBM Plex Mono',monospace">
+              <div style="color:#00D4FF;font-size:11px;letter-spacing:0.05em;margin-bottom:6px">
+                ✓ OTP DISPATCHED TO {count_label.upper()}
+              </div>
+              <div style="color:#3A5878;font-size:11px;line-height:1.8">
+                {masked_list}
               </div>
             </div>""", unsafe_allow_html=True)
+
             with st.form("otp_form"):
                 entered = st.text_input("Enter 6-digit OTP", max_chars=6)
                 verify  = st.form_submit_button("Verify & Access →")
