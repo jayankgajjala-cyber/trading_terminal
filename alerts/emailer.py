@@ -45,11 +45,28 @@ def _random_from(domain: str) -> str:
     return f"{name} <{email}>"
 
 
+def _parse_recipients(raw: str) -> list:
+    """Parse comma-separated email list, deduplicated."""
+    parts = [e.strip() for e in raw.split(",") if e.strip()]
+    seen, unique = set(), []
+    for p in parts:
+        if p.lower() not in seen:
+            seen.add(p.lower())
+            unique.append(p)
+    return unique
+
+
 def _send(subject: str, html: str, to: str = None) -> bool:
-    """Send an email through the Resend API."""
-    api_key   = _cfg("resend", "API_KEY", "")
-    domain    = _cfg("resend", "FROM_DOMAIN", "").strip()
-    recipient = to or _cfg("email", "OTP_RECIPIENT", "jayankgajjala@gmail.com")
+    """Send an email through the Resend API to all configured recipients."""
+    api_key = _cfg("resend", "API_KEY", "")
+    domain  = _cfg("resend", "FROM_DOMAIN", "").strip()
+
+    # Resolve recipient list
+    raw_to = to or (
+        _cfg("email", "OTP_RECIPIENTS", "") or
+        _cfg("email", "OTP_RECIPIENT",  "jayankgajjala@gmail.com")
+    )
+    recipients = _parse_recipients(raw_to)
 
     if not api_key:
         logger.warning("[emailer] No Resend API key — email skipped.")
@@ -64,14 +81,14 @@ def _send(subject: str, html: str, to: str = None) -> bool:
             },
             json={
                 "from":    _random_from(domain),
-                "to":      [recipient],
+                "to":      recipients,          # ← full list, one API call
                 "subject": subject,
                 "html":    html,
             },
             timeout=10,
         )
         if resp.status_code in (200, 201):
-            logger.info(f"Email sent: {subject}")
+            logger.info(f"Email sent to {len(recipients)} recipient(s): {subject}")
             return True
         logger.error(f"Resend {resp.status_code}: {resp.text}")
         return False

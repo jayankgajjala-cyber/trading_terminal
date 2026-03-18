@@ -50,7 +50,7 @@ def job_weekly_analysis():
             continue
         logger.info(f"Running backtest: {symbol}")
         results = run_all_backtests(symbol, df, force=True)
-        best_strat, score = get_best_strategy(results)
+        best_strat, score, reliable = get_best_strategy(results)
         cache.save_strategy_map(symbol, best_strat, score)
         logger.info(f"{symbol} → Best: {best_strat} (score: {score})")
     logger.info("Weekly analysis complete.")

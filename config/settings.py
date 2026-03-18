@@ -20,7 +20,10 @@ AUTH_USERNAME     = _get("auth", "USERNAME", "Jayank8294")
 AUTH_PASSWORD_HASH = _get("auth", "PASSWORD_HASH", "")
 
 # ── Email
-OTP_RECIPIENT_EMAIL = _get("email", "OTP_RECIPIENT", "jayankgajjala@gmail.com")
+# Supports comma-separated list: "a@x.com, b@y.com"
+OTP_RECIPIENTS_RAW  = _get("email", "OTP_RECIPIENTS",
+                            _get("email", "OTP_RECIPIENT", "jayankgajjala@gmail.com"))
+OTP_RECIPIENT_EMAIL = OTP_RECIPIENTS_RAW   # kept for backwards compat in emailer.py
 
 # ── Resend (email delivery)
 RESEND_API_KEY  = _get("resend", "API_KEY", "")

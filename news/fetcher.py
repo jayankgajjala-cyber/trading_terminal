@@ -95,7 +95,27 @@ def fetch_all_news(symbols: list[str], include_global: bool = True) -> list[dict
     return result
 
 
-def fetch_nifty_changes() -> list[dict]:
-    """Stub: monitor Nifty 50 reconstitution announcements."""
-    query = "Nifty 50 index inclusion exclusion 2025"
+def fetch_stock_news(symbol: str, max_articles: int = 8) -> list:
+    """
+    Fetch news specifically for one stock symbol.
+    Combines NewsAPI + Google News RSS for maximum coverage.
+    """
+    clean = symbol.replace(".NS", "").replace(".BSE", "")
+    articles = _newsapi_fetch(clean, page_size=max_articles)
+    if not articles:
+        articles = _google_news_rss(clean)
+
+    # Deduplicate
+    seen, result = set(), []
+    for a in articles:
+        t = a.get("title", "")
+        if t and t not in seen:
+            seen.add(t)
+            result.append(a)
+    return result[:max_articles]
+
+
+def fetch_nifty_changes() -> list:
+    """Monitor Nifty 50 reconstitution announcements."""
+    query = "Nifty 50 index inclusion exclusion 2026"
     return _google_news_rss(query)

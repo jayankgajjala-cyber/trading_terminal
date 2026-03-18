@@ -101,6 +101,34 @@ def render():
       Streamlit Cloud does not support background processes.
     </div>""", unsafe_allow_html=True)
 
+    # ── Excel Export ───────────────────────────────────────────────────────────
+    page_section("Export Data")
+
+    st.markdown("""
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#2A3D58;margin-bottom:12px">
+      Export all backtest results, strategy mappings, paper trades, and alert history to Excel.
+    </div>""", unsafe_allow_html=True)
+
+    if st.button("⬇ Export to Excel", type="primary", key="export_xlsx"):
+        try:
+            from data.cache import CacheManager
+            import os
+            cache_mgr = CacheManager()
+            filepath = "/tmp/trading_terminal_export.xlsx"
+            cache_mgr.export_to_excel(filepath)
+            with open(filepath, "rb") as f:
+                xlsx_bytes = f.read()
+            st.download_button(
+                label="📥 Download trading_terminal_export.xlsx",
+                data=xlsx_bytes,
+                file_name="trading_terminal_export.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_xlsx"
+            )
+            st.success(f"Export ready — {len(xlsx_bytes)//1024} KB")
+        except Exception as e:
+            st.error(f"Export failed: {e}")
+
     # ── Secrets config guide ────────────────────────────────────────────────────
     page_section("Secrets Configuration")
 

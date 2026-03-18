@@ -415,7 +415,7 @@ NAV_ITEMS = [
     ("portfolio", "◈  Portfolio"),
     ("signals",   "⬡  Signals"),
     ("backtest",  "◐  Backtesting"),
-    ("news",      "◎  News Feed"),
+    ("news",      "◎  News & AI Insights"),
     ("paper",     "◇  Paper Trade"),
     ("search",    "◉  Stock Search"),
 ]
@@ -510,7 +510,7 @@ PAGE_META = {
     "portfolio": ("Portfolio Overview",  "Holdings, P&L, allocation & budget"),
     "signals":   ("Strategy Signals",    "Live technical analysis signals"),
     "backtest":  ("Backtesting",         "Historical strategy performance"),
-    "news":      ("News Feed",           "Market news & sentiment"),
+    "news":      ("News & AI Insights",   "AI analysis · sentiment · conflict detection"),
     "paper":     ("Paper Trading",       "Simulated trades & portfolio"),
     "search":    ("Stock Search",        "Full analysis for any NSE stock"),
     "zerodha":   ("Zerodha Connect",     "Broker account & API settings"),

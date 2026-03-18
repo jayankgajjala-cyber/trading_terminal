@@ -32,18 +32,19 @@ def render():
         yf_symbol = symbol + ".NS"
         try:
             from data.fetcher import get_historical_data, get_fundamental_data
-            from analysis.technical import run_all_strategies, get_consensus
+            from analysis.technical import run_all_strategies, get_consensus, deep_analysis
             from analysis.predictor import predict_trend
             with st.spinner(f"Loading {symbol}..."):
                 df    = get_historical_data(yf_symbol, period=period)
                 fund  = get_fundamental_data(yf_symbol)
                 strats = run_all_strategies(df) if not df.empty else {}
                 cons   = get_consensus(strats) if strats else {}
+                da     = deep_analysis(df) if not df.empty else {}
                 pred   = predict_trend(df) if not df.empty else {}
                 st.session_state["search_result"] = {
                     "symbol": symbol, "yf_symbol": yf_symbol,
                     "df": df, "fund": fund, "strats": strats,
-                    "cons": cons, "pred": pred,
+                    "cons": cons, "da": da, "pred": pred,
                 }
         except Exception as e:
             st.error(f"Analysis error: {e}")
@@ -58,6 +59,7 @@ def render():
     fund      = res["fund"]
     strats    = res["strats"]
     cons      = res["cons"]
+    da        = res.get("da", {})
     pred      = res["pred"]
 
     if df.empty:
@@ -175,19 +177,45 @@ def render():
         # Consensus
         cs = cons.get("signal", "HOLD")
         cc = {"BUY":"#00C87A","SELL":"#FF4455","HOLD":"#FFAA00"}.get(cs,"#4A6080")
+        agreeing  = cons.get("agreeing_strategies", 0)
+        n_strats  = len(strats)
+        conf_pct  = cons.get("confidence", 0) * 100
+        warn      = cons.get("warning", "")
+        reason_s  = cons.get("reason_summary", "")
+
         st.markdown(f"""
         <div style="background:#0A0F1C;border:1px solid #141D2E;border-radius:12px;
-                    padding:20px 24px;margin-bottom:20px;text-align:center">
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#2A3D58;
-                      text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">
-            Consensus Signal
+                    padding:20px 24px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#2A3D58;
+                          text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">
+                Consensus Signal
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;
+                          color:{cc}">{cs}</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#3A5070;margin-top:6px">
+                {cons.get('buy_votes',0)} BUY &nbsp;·&nbsp; {cons.get('sell_votes',0)} SELL
+                &nbsp;·&nbsp; {cons.get('hold_votes',0)} HOLD &nbsp;·&nbsp;
+                Confidence: {conf_pct:.0f}%
+                {f'&nbsp;·&nbsp; {agreeing}/{n_strats} strategies agree' if agreeing > 0 else ''}
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#2A3D58;
+                          margin-bottom:4px">Deep Analysis</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4A6080">
+                Trend: {da.get('short_trend','?')}/{da.get('mid_trend','?')}/{da.get('long_trend','?')}
+                {'&nbsp;✓ Aligned' if da.get('trend_aligned') else ''}
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4A6080">
+                14D ROC: {da.get('momentum_roc14', 0):+.1f}%
+                &nbsp;·&nbsp; Vol: {da.get('annualised_vol', 0):.0f}%
+              </div>
+            </div>
           </div>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:32px;font-weight:700;
-                      color:{cc}">{cs}</div>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#3A5070;margin-top:8px">
-            {cons.get('buy_pct',0)}% bullish &nbsp;·&nbsp;
-            Confidence: {cons.get('confidence',0)*100:.0f}%
-          </div>
+          {f'<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:#3A5070;margin-top:10px;padding-top:8px;border-top:1px solid #0D1525">{reason_s}</div>' if reason_s else ''}
+          {f'<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:#FFAA00;margin-top:6px">⚠ {warn}</div>' if warn else ''}
         </div>""", unsafe_allow_html=True)
 
         rows = []

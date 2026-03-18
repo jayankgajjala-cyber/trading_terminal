@@ -205,3 +205,73 @@ class CacheManager:
                 "INSERT INTO alert_log (symbol, signal, price, strategy) VALUES (?,?,?,?)",
                 (symbol, signal, price, strategy)
             )
+
+    def export_to_excel(self, filepath: str = "/tmp/trading_terminal_export.xlsx") -> str:
+        """
+        Export all key data to a multi-sheet Excel workbook.
+        Sheets: Backtest Results, Strategy Map, Paper Portfolio, Trade History, Alert Log
+        Returns filepath.
+        """
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+        with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
+            # ── Backtest Results ──────────────────────────────────────────────
+            with self._conn() as conn:
+                bt_df = pd.read_sql(
+                    "SELECT symbol, strategy, cagr, sharpe, max_drawdown, win_rate, "
+                    "total_trades, run_at FROM backtest_results ORDER BY symbol, cagr DESC",
+                    conn)
+            if not bt_df.empty:
+                bt_df["run_at"] = pd.to_datetime(bt_df["run_at"], unit="s").dt.strftime("%Y-%m-%d %H:%M")
+                bt_df.rename(columns={
+                    "cagr":"CAGR %","sharpe":"Sharpe","max_drawdown":"Max DD %",
+                    "win_rate":"Win Rate %","total_trades":"Trades","run_at":"Run At"
+                }, inplace=True)
+                bt_df.to_excel(writer, sheet_name="Backtest Results", index=False)
+
+            # ── Strategy Map ──────────────────────────────────────────────────
+            with self._conn() as conn:
+                sm_df = pd.read_sql(
+                    "SELECT symbol, best_strategy, score, updated_at FROM strategy_map ORDER BY symbol",
+                    conn)
+            if not sm_df.empty:
+                sm_df["updated_at"] = pd.to_datetime(sm_df["updated_at"], unit="s").dt.strftime("%Y-%m-%d")
+                sm_df.rename(columns={"best_strategy":"Best Strategy","score":"Composite Score",
+                                       "updated_at":"Updated"}, inplace=True)
+                sm_df.to_excel(writer, sheet_name="Strategy Map", index=False)
+
+            # ── Paper Portfolio ───────────────────────────────────────────────
+            paper = self.get_paper_portfolio()
+            if not paper.empty:
+                paper.to_excel(writer, sheet_name="Paper Portfolio", index=False)
+
+            # ── Trade History ─────────────────────────────────────────────────
+            trades = self.get_paper_trades(limit=500)
+            if not trades.empty:
+                trades["timestamp"] = pd.to_datetime(trades["timestamp"], unit="s").dt.strftime("%Y-%m-%d %H:%M")
+                trades.to_excel(writer, sheet_name="Trade History", index=False)
+
+            # ── Alert Log ─────────────────────────────────────────────────────
+            with self._conn() as conn:
+                alerts = pd.read_sql(
+                    "SELECT symbol, signal, price, strategy, sent_at FROM alert_log "
+                    "ORDER BY sent_at DESC LIMIT 200", conn)
+            if not alerts.empty:
+                alerts["sent_at"] = pd.to_datetime(alerts["sent_at"], unit="s").dt.strftime("%Y-%m-%d %H:%M")
+                alerts.to_excel(writer, sheet_name="Alert Log", index=False)
+
+            # ── Style the workbook ────────────────────────────────────────────
+            wb = writer.book
+            header_fill = PatternFill("solid", fgColor="0A0F1C")
+            header_font = Font(color="00D4FF", bold=True, name="Consolas", size=10)
+            for sheet in wb.worksheets:
+                for cell in sheet[1]:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center")
+                for col in sheet.columns:
+                    max_len = max((len(str(cell.value or "")) for cell in col), default=8)
+                    sheet.column_dimensions[col[0].column_letter].width = min(max_len + 4, 30)
+
+        return filepath

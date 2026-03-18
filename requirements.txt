@@ -30,13 +30,14 @@ apscheduler>=3.10.4
 # Authentication
 bcrypt>=4.1.2
 
-# Broker
+# Broker (optional — keep for future Zerodha integration)
 kiteconnect>=4.2.0
 
 # News
 newsapi-python>=0.2.7
 
-# Email via Resend API (https://resend.com — free 3,000 emails/month)
-# requests is already listed above — no extra package needed.
-# Optional: install the official SDK instead:
-#   resend>=0.7.0
+# Excel export
+openpyxl>=3.1.2
+
+# Email via Resend API (requests already listed above)
+# Optional official SDK: resend>=0.7.0
