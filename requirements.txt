@@ -1,0 +1,42 @@
+# Core
+streamlit>=1.32.0
+plotly>=5.19.0
+pandas>=2.1.0
+numpy>=1.26.0
+pytz>=2024.1
+
+# Market Data
+yfinance>=0.2.37
+requests>=2.31.0
+feedparser>=6.0.11
+beautifulsoup4>=4.12.3
+
+# Technical Analysis
+ta>=0.11.0
+
+# Backtesting
+backtrader>=1.9.78
+
+# Machine Learning (prediction)
+scikit-learn>=1.4.0
+
+# Database & Cache
+pyarrow>=15.0.0
+sqlalchemy>=2.0.28
+
+# Scheduling
+apscheduler>=3.10.4
+
+# Authentication
+bcrypt>=4.1.2
+
+# Broker
+kiteconnect>=4.2.0
+
+# News
+newsapi-python>=0.2.7
+
+# Email via Resend API (https://resend.com — free 3,000 emails/month)
+# requests is already listed above — no extra package needed.
+# Optional: install the official SDK instead:
+#   resend>=0.7.0
